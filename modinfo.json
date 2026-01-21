@@ -1,0 +1,15 @@
+{
+  "type": "code",
+  "modid": "chateye",
+  "name": "Chat Eye",
+  "authors": [
+    "CoB", "WickedSchnitzel"
+  ],
+  "description": "Logging tool for chat messages containing specific words.",
+  "version": "1.0.0",
+  "dependencies": {
+    "game": ""
+  },
+  "RequiredOnClient": false,
+  "RequiredOnServer": true
+}
