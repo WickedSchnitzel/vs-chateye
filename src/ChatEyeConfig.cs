@@ -2,18 +2,26 @@ using System.Collections.Generic;
 
 namespace ChatEye
 {
+    public class KeywordEntry
+    {
+        public string Trigger = "";
+        public string ReplyMessage = ""; 
+        
+        public string Prefix = "Info:"; 
+        
+        public string PrefixColor = "#F5E945"; 
+        public int CooldownSeconds = 300;
+    }
+
     public class ChatEyeConfig
     {
-        // 1. Einstellungen (Schalter & URL)
         public bool CreateServerLogs = true;
         public bool SendLogsToDiscord = false;
         public string DiscordWebhookUrl = "";
 
-        // 2. Listen für Keywords
-        public List<string> GeneralKeywords = new List<string>();
-        public List<string> ObsceneKeywords = new List<string>();
+        public List<KeywordEntry> GeneralKeywords = new List<KeywordEntry>();
+        public List<KeywordEntry> ObsceneKeywords = new List<KeywordEntry>();
 
-        // 3. Dateinamen
         public string GeneralLogName = "chateye-general.log";
         public string ObsceneLogName = "chateye-obscene.log";
     }
