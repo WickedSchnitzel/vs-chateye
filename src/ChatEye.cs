@@ -20,6 +20,7 @@ namespace ChatEye
         private string obsceneLogPath;
 
         private static readonly HttpClient client = new HttpClient();
+        private Dictionary<string, long> cooldownTracker = new Dictionary<string, long>();
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
 
@@ -34,16 +35,24 @@ namespace ChatEye
             if (config == null)
             {
                 config = new ChatEyeConfig();
+                
+                config.GeneralKeywords.Add(new KeywordEntry 
+                { 
+                    Trigger = "placekeywordhere", 
+                    ReplyMessage = "This is a test message including a <a href=\"https://yourlink\">Link</a>!",
+                    Prefix = "Info:",
+                    PrefixColor = "#F5E945",
+                    CooldownSeconds = 300
+                });
+                
                 sapi.StoreModConfig(config, "ChatEyeConfig.json");
             }
 
-            // Pfade
             string baseLogDir = api.GetOrCreateDataPath("Logs");
             chatEyeLogDir = Path.Combine(baseLogDir, "ChatEyeLogs");
             generalLogPath = Path.Combine(chatEyeLogDir, config.GeneralLogName);
             obsceneLogPath = Path.Combine(chatEyeLogDir, config.ObsceneLogName);
 
-            // Ordner erstellen, falls lokales Logging aktiv ist
             if (config.CreateServerLogs && !Directory.Exists(chatEyeLogDir))
             {
                 Directory.CreateDirectory(chatEyeLogDir);
@@ -67,21 +76,23 @@ namespace ChatEye
                 }
             }
 
+            // --- NEUE LOGIK ---
+            // 1. Normale Kleinschreibung (für exakte Suche mit Leerzeichen)
             string lowerMsg = cleanMessage.ToLowerInvariant();
-            string spacelessMsg = lowerMsg.Replace(" ", "");
+            
+            // 2. Radikale Bereinigung: Nur Buchstaben und Zahlen behalten
+            // Aus "dumm erpen n.e-r" wird "dummerpenner"
+            string normalizedMsg = GetNormalizedString(lowerMsg);
 
             // 1. Obscene Check
             if (config.ObsceneKeywords != null)
             {
-                foreach (var word in config.ObsceneKeywords)
+                foreach (var entry in config.ObsceneKeywords)
                 {
-                    if (string.IsNullOrWhiteSpace(word)) continue;
-                    string lowerWord = word.ToLowerInvariant();
-                    string spacelessWord = lowerWord.Replace(" ", "");
-
-                    if (lowerMsg.Contains(lowerWord) || spacelessMsg.Contains(spacelessWord))
+                    if (CheckMatch(entry.Trigger, lowerMsg, normalizedMsg))
                     {
-                        ProcessMatch("OBSCENE", obsceneLogPath, player, cleanMessage, word);
+                        ProcessMatch("OBSCENE", obsceneLogPath, player, cleanMessage, entry.Trigger);
+                        AttemptSendReply(player, entry);
                         return; 
                     }
                 }
@@ -90,19 +101,79 @@ namespace ChatEye
             // 2. General Check
             if (config.GeneralKeywords != null)
             {
-                foreach (var word in config.GeneralKeywords)
+                foreach (var entry in config.GeneralKeywords)
                 {
-                    if (string.IsNullOrWhiteSpace(word)) continue;
-                    string lowerWord = word.ToLowerInvariant();
-                    string spacelessWord = lowerWord.Replace(" ", "");
-
-                    if (lowerMsg.Contains(lowerWord) || spacelessMsg.Contains(spacelessWord))
+                    if (CheckMatch(entry.Trigger, lowerMsg, normalizedMsg))
                     {
-                        ProcessMatch("GENERAL", generalLogPath, player, cleanMessage, word);
+                        ProcessMatch("GENERAL", generalLogPath, player, cleanMessage, entry.Trigger);
+                        AttemptSendReply(player, entry); 
                         return; 
                     }
                 }
             }
+        }
+
+        // Neue Hilfsfunktion: Entfernt alles, was kein Buchstabe oder Zahl ist
+        private string GetNormalizedString(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return "";
+            
+            StringBuilder sb = new StringBuilder(input.Length);
+            foreach (char c in input)
+            {
+                // Behält nur Buchstaben und Ziffern -> löscht Leerzeichen, Punkte, Bindestriche etc.
+                if (char.IsLetterOrDigit(c))
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
+        }
+
+        private bool CheckMatch(string keyword, string lowerMsg, string normalizedMsg)
+        {
+            if (string.IsNullOrWhiteSpace(keyword)) return false;
+            
+            string lowerWord = keyword.ToLowerInvariant();
+            
+            // Auch das Keyword müssen wir normalisieren, falls der Admin "how to" eingetragen hat -> "howto"
+            string normalizedWord = GetNormalizedString(lowerWord);
+            
+            // Prüfung 1: Ist das Wort normal im Text? (Originalgetreu)
+            // Prüfung 2: Ist das normalisierte Wort im normalisierten Text? (Catch-All)
+            return lowerMsg.Contains(lowerWord) || normalizedMsg.Contains(normalizedWord);
+        }
+
+        private void AttemptSendReply(IServerPlayer player, KeywordEntry entry)
+        {
+            if (string.IsNullOrEmpty(entry.ReplyMessage)) return;
+
+            long now = DateTimeOffset.Now.ToUnixTimeSeconds();
+            string key = entry.Trigger.ToLowerInvariant();
+
+            if (cooldownTracker.TryGetValue(key, out long lastTriggerTime))
+            {
+                if (now - lastTriggerTime < entry.CooldownSeconds) return; 
+            }
+
+            cooldownTracker[key] = now;
+            sapi.Event.EnqueueMainThreadTask(() => SendReplyInternal(player, entry), "chateye_reply");
+        }
+
+        private void SendReplyInternal(IServerPlayer player, KeywordEntry entry)
+        {
+            if (player == null) return;
+
+            string finalMessage = entry.ReplyMessage;
+
+            if (!string.IsNullOrEmpty(entry.Prefix))
+            {
+                string color = string.IsNullOrEmpty(entry.PrefixColor) ? "#F5E945" : entry.PrefixColor;
+                string formattedPrefix = $"<font color=\"{color}\"><strong>{entry.Prefix}</strong></font>";
+                finalMessage = $"{formattedPrefix} {finalMessage}";
+            }
+
+            player.SendMessage(0, finalMessage, EnumChatType.Notification);
         }
 
         private void ProcessMatch(string category, string logFilePath, IServerPlayer player, string message, string keyword)
@@ -153,7 +224,7 @@ namespace ChatEye
                             ""color"": {color},
                             ""fields"": [
                                 {{ ""name"": ""Player"", ""value"": ""{safeName}"", ""inline"": true }},
-                                {{ ""name"": ""Keyword"", ""value"": ""{safeKeyword}"", ""inline"": true }},
+                                {{ ""name"": ""Trigger"", ""value"": ""{safeKeyword}"", ""inline"": true }},
                                 {{ ""name"": ""UID"", ""value"": ""{safeUid}"", ""inline"": false }},
                                 {{ ""name"": ""Message"", ""value"": ""{safeMsg}"" }}
                             ],
