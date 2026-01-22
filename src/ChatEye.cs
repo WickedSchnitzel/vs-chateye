@@ -1,9 +1,11 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Vintagestory.API.Datastructures;
@@ -36,14 +38,18 @@ namespace ChatEye
             {
                 config = new ChatEyeConfig();
                 
+                // --- KORRIGIERTER DEFAULT ---
                 config.GeneralKeywords.Add(new KeywordEntry 
                 { 
-                    Trigger = "placekeywordhere", 
-                    ReplyMessage = "This is a test message including a <a href=\"https://yourlink\">Link</a>!",
+                    Trigger = "placekeywordhere",
+                    ExactMatch = false,
+                    // Hier wurde "someadress" zu "someaddress" korrigiert
+                    ReplyMessage = "This is a test message including a <a href=\"https://someaddress\">Link</a>!",
                     Prefix = "Info:",
                     PrefixColor = "#F5E945",
                     CooldownSeconds = 300
                 });
+                // ---------------------------
                 
                 sapi.StoreModConfig(config, "ChatEyeConfig.json");
             }
@@ -65,7 +71,6 @@ namespace ChatEye
         {
             if (string.IsNullOrEmpty(message) || message.StartsWith("/")) return;
 
-            // HTML Tags entfernen
             string cleanMessage = message;
             if (message.Contains("</font>"))
             {
@@ -76,20 +81,17 @@ namespace ChatEye
                 }
             }
 
-            // --- NEUE LOGIK ---
-            // 1. Normale Kleinschreibung (für exakte Suche mit Leerzeichen)
             string lowerMsg = cleanMessage.ToLowerInvariant();
-            
-            // 2. Radikale Bereinigung: Nur Buchstaben und Zahlen behalten
-            // Aus "dumm erpen n.e-r" wird "dummerpenner"
-            string normalizedMsg = GetNormalizedString(lowerMsg);
+            string normalizedMsg = null; 
 
             // 1. Obscene Check
             if (config.ObsceneKeywords != null)
             {
                 foreach (var entry in config.ObsceneKeywords)
                 {
-                    if (CheckMatch(entry.Trigger, lowerMsg, normalizedMsg))
+                    if (!entry.ExactMatch && normalizedMsg == null) normalizedMsg = GetNormalizedString(lowerMsg);
+
+                    if (CheckMatch(entry, lowerMsg, normalizedMsg))
                     {
                         ProcessMatch("OBSCENE", obsceneLogPath, player, cleanMessage, entry.Trigger);
                         AttemptSendReply(player, entry);
@@ -103,7 +105,9 @@ namespace ChatEye
             {
                 foreach (var entry in config.GeneralKeywords)
                 {
-                    if (CheckMatch(entry.Trigger, lowerMsg, normalizedMsg))
+                    if (!entry.ExactMatch && normalizedMsg == null) normalizedMsg = GetNormalizedString(lowerMsg);
+
+                    if (CheckMatch(entry, lowerMsg, normalizedMsg))
                     {
                         ProcessMatch("GENERAL", generalLogPath, player, cleanMessage, entry.Trigger);
                         AttemptSendReply(player, entry); 
@@ -113,35 +117,41 @@ namespace ChatEye
             }
         }
 
-        // Neue Hilfsfunktion: Entfernt alles, was kein Buchstabe oder Zahl ist
         private string GetNormalizedString(string input)
         {
             if (string.IsNullOrEmpty(input)) return "";
-            
             StringBuilder sb = new StringBuilder(input.Length);
-            foreach (char c in input)
-            {
-                // Behält nur Buchstaben und Ziffern -> löscht Leerzeichen, Punkte, Bindestriche etc.
-                if (char.IsLetterOrDigit(c))
-                {
-                    sb.Append(c);
-                }
+            foreach (char c in input) {
+                if (char.IsLetterOrDigit(c)) sb.Append(c);
             }
             return sb.ToString();
         }
 
-        private bool CheckMatch(string keyword, string lowerMsg, string normalizedMsg)
+        private bool CheckMatch(KeywordEntry entry, string lowerMsg, string normalizedMsg)
         {
-            if (string.IsNullOrWhiteSpace(keyword)) return false;
+            if (string.IsNullOrWhiteSpace(entry.Trigger)) return false;
             
-            string lowerWord = keyword.ToLowerInvariant();
-            
-            // Auch das Keyword müssen wir normalisieren, falls der Admin "how to" eingetragen hat -> "howto"
-            string normalizedWord = GetNormalizedString(lowerWord);
-            
-            // Prüfung 1: Ist das Wort normal im Text? (Originalgetreu)
-            // Prüfung 2: Ist das normalisierte Wort im normalisierten Text? (Catch-All)
-            return lowerMsg.Contains(lowerWord) || normalizedMsg.Contains(normalizedWord);
+            if (entry.ExactMatch)
+            {
+                string escapedTrigger = string.Join(@"\s*", entry.Trigger.ToLowerInvariant().Select(c => Regex.Escape(c.ToString())));
+                string pattern = $@"(?<!\w){escapedTrigger}(?!\s*\w)";
+
+                try
+                {
+                    return Regex.IsMatch(lowerMsg, pattern, RegexOptions.IgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                string lowerTrigger = entry.Trigger.ToLowerInvariant();
+                string normalizedTrigger = GetNormalizedString(lowerTrigger);
+
+                return lowerMsg.Contains(lowerTrigger) || (normalizedMsg != null && normalizedMsg.Contains(normalizedTrigger));
+            }
         }
 
         private void AttemptSendReply(IServerPlayer player, KeywordEntry entry)
