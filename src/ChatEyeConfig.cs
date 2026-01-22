@@ -5,10 +5,12 @@ namespace ChatEye
     public class KeywordEntry
     {
         public string Trigger = "";
+        
+        // ExactMatch steht hier oben, damit es im JSON als zweites Feld erscheint
+        public bool ExactMatch = false; 
+
         public string ReplyMessage = ""; 
-        
         public string Prefix = "Info:"; 
-        
         public string PrefixColor = "#F5E945"; 
         public int CooldownSeconds = 300;
     }
