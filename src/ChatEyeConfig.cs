@@ -1,13 +1,14 @@
 using System.Collections.Generic;
-
+//v1.0.3
 namespace ChatEye
 {
     public class KeywordEntry
     {
         public string Trigger = "";
         
-        // ExactMatch steht hier oben, damit es im JSON als zweites Feld erscheint
         public bool ExactMatch = false; 
+
+        public bool AutoReply = true; 
 
         public string ReplyMessage = ""; 
         public string Prefix = "Info:"; 
