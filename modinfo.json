@@ -1,12 +1,12 @@
 {
   "type": "code",
   "modid": "chateye",
-  "name": "Chat Eye",
+  "name": "ChatEye",
   "authors": [
-    "CoB", "WickedSchnitzel"
+    "WickedSchnitzel"
   ],
-  "description": "Logging tool for chat messages containing specific words.",
-  "version": "1.0.0",
+  "description": "Logging tool with auto-reply support for chat messages containing specific keywords.",
+  "version": "1.0.3",
   "dependencies": {
     "game": ""
   },
