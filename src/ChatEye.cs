@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Vintagestory.API.Datastructures;
-
+//v1.0.3
 namespace ChatEye
 {
     public class ChatEye : ModSystem
@@ -38,18 +38,16 @@ namespace ChatEye
             {
                 config = new ChatEyeConfig();
                 
-                // --- KORRIGIERTER DEFAULT ---
                 config.GeneralKeywords.Add(new KeywordEntry 
                 { 
                     Trigger = "placekeywordhere",
                     ExactMatch = false,
-                    // Hier wurde "someadress" zu "someaddress" korrigiert
+                    AutoReply = true,
                     ReplyMessage = "This is a test message including a <a href=\"https://someaddress\">Link</a>!",
                     Prefix = "Info:",
                     PrefixColor = "#F5E945",
                     CooldownSeconds = 300
                 });
-                // ---------------------------
                 
                 sapi.StoreModConfig(config, "ChatEyeConfig.json");
             }
@@ -156,7 +154,8 @@ namespace ChatEye
 
         private void AttemptSendReply(IServerPlayer player, KeywordEntry entry)
         {
-            if (string.IsNullOrEmpty(entry.ReplyMessage)) return;
+            // Prüfung des neuen AutoReply Schalters
+            if (!entry.AutoReply || string.IsNullOrEmpty(entry.ReplyMessage)) return;
 
             long now = DateTimeOffset.Now.ToUnixTimeSeconds();
             string key = entry.Trigger.ToLowerInvariant();
